@@ -4,6 +4,7 @@ import com.nilhcem.fakesmtp.model.UIModel;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.subethamail.smtp.RejectException;
@@ -29,6 +30,9 @@ public final class MailListener implements SimpleMessageListener {
 		this.saver = saver;
 	}
 
+	private final static String BLOCK_DOMAIN = "block.com";
+	private final static int BLOCK_SECONDS = 60;
+
 	/**
 	 * Accepts all kind of email <i>(always return true)</i>.
 	 * <p>
@@ -41,6 +45,20 @@ public final class MailListener implements SimpleMessageListener {
 	 * @return always return {@code true}
 	 */
 	public boolean accept(String from, String recipient) {
+		handleBlocked(recipient);
+		handleRelay(recipient);
+		return true;
+	}
+
+    /**
+     * Receives emails and forwards them to the {@link MailSaver} object.
+     */
+	@Override
+	public void deliver(String from, String recipient, InputStream data) throws IOException {
+		saver.saveEmailAndNotify(from, recipient, data);
+	}
+
+	private void handleRelay(String recipient) {
 		List<String> relayDomains = UIModel.INSTANCE.getRelayDomains();
 
 		if (relayDomains != null) {
@@ -57,14 +75,15 @@ public final class MailListener implements SimpleMessageListener {
 				throw new RejectException(550, "5.7.54 SMTP; Unable to relay recipient in non-accepted domain");
 			}
 		}
-		return true;
 	}
 
-    /**
-     * Receives emails and forwards them to the {@link MailSaver} object.
-     */
-	@Override
-	public void deliver(String from, String recipient, InputStream data) throws IOException {
-		saver.saveEmailAndNotify(from, recipient, data);
+	private void handleBlocked(String recipient) {
+		if (recipient.endsWith(BLOCK_DOMAIN)) {
+			try {
+				TimeUnit.SECONDS.sleep(BLOCK_SECONDS);
+			} catch (InterruptedException e) {
+				throw new RuntimeException(e);
+			}
+		}
 	}
 }
